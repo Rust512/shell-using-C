@@ -2,6 +2,7 @@
 #include <string.h>
 
 #define EXIT "exit 0"
+#define ECHO "echo "
 
 int main() {
     while (1) {
@@ -18,6 +19,12 @@ int main() {
 
         if (strcmp(EXIT, input) == 0L) {
             break;
+        }
+
+        if (strncmp(ECHO, input, strlen(ECHO)) == 0L) {
+            printf("%s\n", input + strlen(ECHO));
+            fflush(stdout);
+            continue;
         }
 
         // The last character in the command is a '\n', we must remove this character.
