@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define EXIT "exit"
+#define EXIT "exit 0"
 
 int get_string_length(char *str);
 
@@ -17,6 +17,10 @@ int main() {
 
         // remove the trailing '\n' character from input string.
         input[get_string_length(input) - 1] = '\0';
+
+        if (strcmp(EXIT, input) == 0L) {
+            break;
+        }
 
         // The last character in the command is a '\n', we must remove this character.
         printf("%s: not found\n", input);
