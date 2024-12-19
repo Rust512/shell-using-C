@@ -11,7 +11,7 @@
 
 #define NOT_FOUND "NOT_FOUND"
 #define ECHO_PATH "echo $PATH"
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 2048
 
 typedef enum repl_state {
     CONTINUE,
@@ -218,18 +218,23 @@ void segregate_paths(char **path_array, char *paths) {
 char *find_command(char **all_paths, int number_of_paths, const char *command_name) {
     for (int i = 0; i < number_of_paths; i++) {
         char *true_name = find_in_directory(all_paths[i], command_name);
-        if (true_name == NULL) {
+        if (strcmp(true_name, NOT_FOUND) == 0) {
             continue;
         }
         return true_name;
     }
 
-    return NULL;
+    return NOT_FOUND;
 }
 
 char *find_in_directory(char *directory_path, const char *command_name) {
     DIR *dir = opendir(directory_path);
-    struct dirent *dir_pointer;
+
+    if (dir == NULL) {
+        return NOT_FOUND;
+    }
+
+    struct dirent *dir_pointer = NULL;
 
     char *true_name = (char *) calloc(strlen(directory_path) + strlen(command_name) + 2, sizeof(char));
     strcat(true_name, directory_path);
@@ -240,10 +245,13 @@ char *find_in_directory(char *directory_path, const char *command_name) {
             continue;
         }
         struct stat entry_info;
-        if (stat(true_name, &entry_info) == 0) {
+        int status = stat(true_name, &entry_info);
+        if (status == 0) {
+            closedir(dir);
             return true_name;
         }
     }
 
-    return NULL;
+    closedir(dir);
+    return NOT_FOUND;
 }
