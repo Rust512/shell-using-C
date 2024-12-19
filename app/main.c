@@ -106,12 +106,12 @@ void type_command(char *command) {
     if (is_built_in(arguments)) {
         printf("%s is a shell builtin\n", arguments);
     } else {
-        not_found(arguments);
+        printf("%s: not found\n", arguments);
     }
 }
 
 void not_found(char *command_name) {
-    printf("%s: not found\n", command_name);
+    printf("%s: command not found\n", command_name);
 }
 
 int is_built_in(const char *command_name) {
