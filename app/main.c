@@ -4,12 +4,18 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #define BUFFER_SIZE 2048
 
 static const char *EXIT = "exit";
 static const char *ECHO = "echo";
 static const char *TYPE = "type";
+
+size_t DIR_COUNT;
+char *PATH_VARIABLE;
+char **DIRECTORIES;
 
 typedef struct command {
     char *name;
@@ -30,7 +36,7 @@ typedef enum command_behavior {
     BACKGROUND
 } CommandBehavior;
 
-typedef CommandBehavior (execute_command)(const Command *);
+typedef CommandBehavior (instructions)(const Command *);
 
 char *ltrim(char *);
 
@@ -48,25 +54,38 @@ void initialize_args_array(char **, const char *, size_t);
 
 Command parse_command(const char *);
 
-void free_command(const Command *);
-
-execute_command *factory(const Command *);
+instructions *factory(const Command *);
 
 CommandType get_command_type(const Command *);
 
 CommandBehavior execute_generic_command(const Command *);
 
-CommandBehavior execute_inbuilt_command(const Command *);
+CommandBehavior execute_internal_command(const Command *);
+
+CommandBehavior execute_external_command(const Command *);
 
 CommandBehavior unknown(const Command *);
 
 CommandBehavior type_command(const Command *);
 
+void process_external_command(const Command *);
+
 CommandBehavior exit_command(__attribute__((unused)) const Command *);
 
 CommandBehavior echo_command(const Command *);
 
+CommandBehavior external_command(__attribute__((unused)) const Command *);
+void get_path_variable();
+void set_dir_count();
+void set_dirs();
+int external_command_exists(const Command *);
+bool command_exists_in_dir(const Command *, const char *);
+void free_path_details();
+void get_full_name(const char *, const char *, char *);
+void initialize_path_cache();
+
 int main() {
+    initialize_path_cache();
     while (1) {
         printf("$ ");
         fflush(stdout);
@@ -90,17 +109,17 @@ int main() {
         switch (behavior) {
             case EXECUTE:
             case BACKGROUND:
-                free_command(&parsed);
                 free(input);
                 continue;
             default:
                 break;
         }
 
-        free_command(&parsed);
         free(input);
         fflush(stdout);
     }
+
+    free_path_details();
     return 0;
 }
 
@@ -192,7 +211,8 @@ void initialize_args_array(char **args, const char *all_args, size_t args_count)
         index++;
     }
 
-    args[arg_index] = strdup(all_args + start_index);
+    if (arg_index < args_count)
+        args[arg_index] = strdup(all_args + start_index);
 }
 
 Command parse_command(const char *input) {
@@ -225,13 +245,7 @@ Command parse_command(const char *input) {
     return command;
 }
 
-void free_command(const Command *command) {
-    for (size_t i = 0; i < command->arg_count; i++) {
-        free(command->args[i]);
-    }
-}
-
-execute_command *factory(const Command *command) {
+instructions *factory(const Command *command) {
     const char *name = command->name;
     if (!strcmp(name, EXIT)) {
         return &exit_command;
@@ -252,6 +266,10 @@ CommandType get_command_type(const Command *command) {
         return INTERNAL;
     }
 
+    if (external_command_exists(command) != -1) {
+        return EXTERNAL;
+    }
+
     return UNKNOWN;
 }
 
@@ -260,17 +278,22 @@ CommandBehavior execute_generic_command(const Command *command) {
 
     switch (type) {
         case INTERNAL:
-            return execute_inbuilt_command(command);
+            return execute_internal_command(command);
         case EXTERNAL:
-            return EXECUTE;
+            return execute_external_command(command);
         case UNKNOWN:
             return unknown(command);
     }
 }
 
-CommandBehavior execute_inbuilt_command(const Command *command) {
-    execute_command *execute = factory(command);
+CommandBehavior execute_internal_command(const Command *command) {
+    instructions *execute = factory(command);
     return execute(command);
+}
+
+CommandBehavior execute_external_command(const Command *command) {
+    // TODO: implement this.
+    return external_command(command);
 }
 
 CommandBehavior unknown(const Command *command) {
@@ -286,12 +309,27 @@ CommandBehavior type_command(const Command *command) {
     Command type_command = parse_command(type_argument);
     CommandType type = get_command_type(&type_command);
 
-    if (type == INTERNAL) {
-        printf("%s is a shell builtin\n", type_argument);
-    } else {
-        printf("%s: not found\n", type_argument);
+    switch (type) {
+        case INTERNAL:
+            printf("%s is a shell builtin\n", type_argument);
+            break;
+        case EXTERNAL:
+            process_external_command(&type_command);
+            break;
+        case UNKNOWN:
+            printf("%s: not found\n", type_argument);
+            break;
     }
+
     return EXECUTE;
+}
+
+void process_external_command(const Command *command) {
+    int dir_index = external_command_exists(command);
+    char *full_name = (char *) calloc(strlen(DIRECTORIES[dir_index]) + strlen(command->name) + 2, sizeof(char));
+    get_full_name(DIRECTORIES[dir_index], command->name, full_name);
+    printf("%s is %s\n", command->name, full_name);
+    free(full_name);
 }
 
 CommandBehavior exit_command(__attribute__((unused)) const Command *command) {
@@ -302,3 +340,126 @@ CommandBehavior echo_command(const Command *command) {
     printf("%s\n", command->all_args);
     return EXECUTE;
 }
+
+CommandBehavior external_command(__attribute__((unused)) const Command *command) {
+    /*
+     * TODO: follow these steps:
+     * 1. find the complete name of the executable.
+     * 2. execute the command.
+     */
+
+    return EXECUTE;
+}
+
+void get_path_variable() {
+    FILE *fp = popen("echo $PATH", "r");
+    assert(fp != NULL);
+    char buffer[BUFFER_SIZE];
+    assert(fgets(buffer, BUFFER_SIZE, fp) != NULL);
+    PATH_VARIABLE = strdup(buffer);
+    pclose(fp);
+}
+
+void set_dir_count() {
+    size_t index = 0;
+    while (PATH_VARIABLE[index] != '\0') {
+        DIR_COUNT += (PATH_VARIABLE[index] == ':');
+        index++;
+    }
+
+    DIR_COUNT++;
+    assert(DIR_COUNT >= 1);
+    DIRECTORIES = (char **) calloc(DIR_COUNT, sizeof(char *));
+}
+
+void set_dirs() {
+    if (DIRECTORIES == NULL) {
+        return;
+    }
+    size_t index = 0;
+    size_t dir_index = 0;
+    size_t start_index = 0;
+    while (PATH_VARIABLE[index] != '\0') {
+        if (PATH_VARIABLE[index] == ':') {
+            DIRECTORIES[dir_index] = strndup(PATH_VARIABLE + start_index, index - start_index);
+            dir_index++;
+            start_index = index + 1;
+        }
+        index++;
+    }
+
+    DIRECTORIES[dir_index] = strdup(PATH_VARIABLE + start_index);
+}
+
+int external_command_exists(const Command *command) {
+    for (int index = 0; index < DIR_COUNT; index++) {
+        if (command_exists_in_dir(command, DIRECTORIES[index])) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+bool command_exists_in_dir(const Command *command, const char *directory) {
+    DIR *dir_pointer = opendir(directory);
+
+    if (dir_pointer == NULL) {
+        // directory does not exist
+        return false;
+    }
+
+    const struct dirent *dir;
+
+    while ((dir = readdir(dir_pointer)) != NULL) {
+        if (dir->d_type == DT_DIR) {
+            continue;
+        }
+
+        struct stat stats;
+        // The + 2 in the end is for the '/' character and '\0' characters in the full path.
+        char *full_path = (char *) calloc(strlen(directory) + strlen(command->name) + 2, sizeof(char));
+        strcat(full_path, directory);
+        strcat(full_path, "/");
+        strcat(full_path, command->name);
+        if (stat(full_path, &stats) == -1) {
+            free(full_path);
+            continue;
+        }
+
+        if (stats.st_mode & S_IXUSR) {
+            free(full_path);
+            closedir(dir_pointer);
+            return true;
+        }
+        free(full_path);
+    }
+
+    closedir(dir_pointer);
+    return false;
+}
+
+void free_path_details() {
+    for (int i = 0; i < DIR_COUNT; i++) {
+        free(DIRECTORIES[i]);
+    }
+    free(DIRECTORIES);
+}
+
+void get_full_name(const char *directory, const char *name, char *full_name) {
+    assert(directory != NULL);
+    assert(strlen(directory) > 0);
+    assert(name != NULL);
+    assert(strlen(name) > 0);
+    assert(full_name != NULL);
+
+    strcat(full_name, directory);
+    strcat(full_name, "/");
+    strcat(full_name, name);
+}
+
+void initialize_path_cache() {
+    get_path_variable();
+    set_dir_count();
+    set_dirs();
+}
+
