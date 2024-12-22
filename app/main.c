@@ -341,21 +341,46 @@ CommandBehavior echo_command(const Command *command) {
     return EXECUTE;
 }
 
-CommandBehavior external_command(__attribute__((unused)) const Command *command) {
-    /*
-     * TODO: follow these steps:
-     * 1. find the complete name of the executable.
-     * 2. execute the command.
-     */
+CommandBehavior external_command(const Command *command) {
+    assert(command != NULL);
+    assert(command->name != NULL);
 
+    int dir_index = external_command_exists(command);
+    assert(dir_index != -1);
+    char *full_name = (char *) calloc(strlen(DIRECTORIES[dir_index]) + strlen(command->name) + 2, sizeof(char));
+    get_full_name(DIRECTORIES[dir_index], command->name, full_name);
+
+    char *string_command = (char*) calloc(strlen(full_name) + strlen(command->all_args) + 2, sizeof(char));
+
+    strcat(string_command, full_name);
+    strcat(string_command, " ");
+    strcat(string_command, command->all_args);
+
+    FILE *fp = popen(string_command, "r");
+
+    if (fp == NULL) {
+        printf("Failed to execute command: %s\n", string_command);
+        free(string_command);
+        free(full_name);
+        return EXECUTE;
+    }
+
+    char buffer[BUFFER_SIZE];
+    while (fgets(buffer, BUFFER_SIZE - 1, fp) != NULL) {
+        printf("%s", buffer);
+    }
+
+    free(string_command);
+    free(full_name);
     return EXECUTE;
 }
+
 
 void get_path_variable() {
     FILE *fp = popen("echo $PATH", "r");
     assert(fp != NULL);
     char buffer[BUFFER_SIZE];
-    assert(fgets(buffer, BUFFER_SIZE, fp) != NULL);
+    assert(fgets(buffer, BUFFER_SIZE - 1, fp) != NULL);
     PATH_VARIABLE = strdup(buffer);
     pclose(fp);
 }
