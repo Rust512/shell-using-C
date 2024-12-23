@@ -413,7 +413,7 @@ void set_dirs() {
         index++;
     }
 
-    DIRECTORIES[dir_index] = strdup(PATH_VARIABLE + start_index);
+    DIRECTORIES[dir_index] = trim(strdup(PATH_VARIABLE + start_index));
 }
 
 int external_command_exists(const Command *command) {
@@ -487,4 +487,3 @@ void initialize_path_cache() {
     set_dir_count();
     set_dirs();
 }
-
