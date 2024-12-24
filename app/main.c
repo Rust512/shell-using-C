@@ -6,12 +6,14 @@
 #include <assert.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #define BUFFER_SIZE 2048
 
 static const char *EXIT = "exit";
 static const char *ECHO = "echo";
 static const char *TYPE = "type";
+static const char *PWD = "pwd";
 
 size_t DIR_COUNT;
 char *PATH_VARIABLE;
@@ -83,6 +85,8 @@ bool command_exists_in_dir(const Command *, const char *);
 void free_path_details();
 void get_full_name(const char *, const char *, char *);
 void initialize_path_cache();
+
+CommandBehavior print_working_directory(__attribute__((unused)) const Command *command);
 
 int main() {
     initialize_path_cache();
@@ -253,6 +257,8 @@ instructions *factory(const Command *command) {
         return &echo_command;
     } else if (!strcmp(name, TYPE)) {
         return &type_command;
+    } else if (!strcmp(name, PWD)) {
+        return &print_working_directory;
     }
 
     return &unknown;
@@ -260,7 +266,7 @@ instructions *factory(const Command *command) {
 
 CommandType get_command_type(const Command *command) {
     const char *name = command->name;
-    bool is_inbuilt = !strcmp(name, EXIT) || !strcmp(name, ECHO) || !strcmp(name, TYPE);
+    bool is_inbuilt = !strcmp(name, EXIT) || !strcmp(name, ECHO) || !strcmp(name, TYPE) || !strcmp(name, PWD);
 
     if (is_inbuilt) {
         return INTERNAL;
@@ -292,7 +298,6 @@ CommandBehavior execute_internal_command(const Command *command) {
 }
 
 CommandBehavior execute_external_command(const Command *command) {
-    // TODO: implement this.
     return external_command(command);
 }
 
@@ -486,4 +491,15 @@ void initialize_path_cache() {
     get_path_variable();
     set_dir_count();
     set_dirs();
+}
+
+CommandBehavior print_working_directory(__attribute__((unused)) const Command *command) {
+    char buffer[BUFFER_SIZE];
+    if (getcwd(buffer, BUFFER_SIZE) == NULL) {
+        fprintf(stderr, "encountered an error while fetching the current working directory\n");
+        return EXECUTE;
+    }
+
+    printf("%s\n", buffer);
+    return EXECUTE;
 }
